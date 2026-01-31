@@ -1,0 +1,82 @@
+name: Build PostgreSQL with Vector Extensions
+
+on:
+  workflow_dispatch:
+    inputs:
+      pg_version:
+        description: 'PostgreSQL Version'
+        required: false
+        default: '18'
+      pgvector_version:
+        description: 'pgvector Version'
+        required: false
+        default: '0.8.1'
+      vectorchord_version:
+        description: 'VectorChord Version'
+        required: false
+        default: '1.0.0'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=pg${{ github.event.inputs.pg_version || '18' }}
+            type=raw,value=pg${{ github.event.inputs.pg_version || '18' }}-pgvector${{ github.event.inputs.pgvector_version || '0.8.1' }}-vchord${{ github.event.inputs.vectorchord_version || '1.0.0' }}
+            type=sha
+
+      - name: Build and push Docker image
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          file: ./Dockerfile
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            PG_VERSION=${{ github.event.inputs.pg_version || '18' }}
+            PGVECTOR_VERSION=${{ github.event.inputs.pgvector_version || '0.8.1' }}
+            VECTORCHORD_VERSION=${{ github.event.inputs.vectorchord_version || '1.0.0' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate artifact attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME}}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
