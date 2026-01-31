@@ -1,0 +1,134 @@
+name: Check for New Dependency Versions
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly on Monday at 6:00 AM UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      updates_available: ${{ steps.compare.outputs.updates_available }}
+      changelog: ${{ steps.compare.outputs.changelog }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Load current versions
+        id: current
+        run: |
+          source .versions
+          echo "image_version=${IMAGE_VERSION}" >> $GITHUB_OUTPUT
+          echo "pg_version=${PG_VERSION}" >> $GITHUB_OUTPUT
+          echo "pgvector_version=${PGVECTOR_VERSION}" >> $GITHUB_OUTPUT
+          echo "vectorchord_version=${VECTORCHORD_VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Check latest PostgreSQL version
+        id: check-pg
+        run: |
+          # Get latest PostgreSQL major version from Docker Hub (alpine tags)
+          LATEST_PG=$(curl -sL "https://registry.hub.docker.com/v2/repositories/library/postgres/tags?page_size=100" | \
+            jq -r '.results[].name' | \
+            grep -E '^[0-9]+-alpine$' | \
+            sed 's/-alpine//' | \
+            sort -rn | \
+            head -1)
+          echo "latest=${LATEST_PG}" >> $GITHUB_OUTPUT
+          echo "Latest PostgreSQL: ${LATEST_PG}"
+
+      - name: Check latest pgvector version
+        id: check-pgvector
+        run: |
+          LATEST=$(curl -sL "https://api.github.com/repos/pgvector/pgvector/releases/latest" | \
+            jq -r '.tag_name' | sed 's/^v//')
+          echo "latest=${LATEST}" >> $GITHUB_OUTPUT
+          echo "Latest pgvector: ${LATEST}"
+
+      - name: Check latest VectorChord version
+        id: check-vectorchord
+        run: |
+          LATEST=$(curl -sL "https://api.github.com/repos/tensorchord/VectorChord/releases/latest" | \
+            jq -r '.tag_name' | sed 's/^v//')
+          echo "latest=${LATEST}" >> $GITHUB_OUTPUT
+          echo "Latest VectorChord: ${LATEST}"
+
+      - name: Compare versions
+        id: compare
+        run: |
+          UPDATES=""
+          CHANGELOG=""
+
+          if [ "${{ steps.current.outputs.pg_version }}" != "${{ steps.check-pg.outputs.latest }}" ] && [ -n "${{ steps.check-pg.outputs.latest }}" ]; then
+            UPDATES="true"
+            CHANGELOG="${CHANGELOG}- **PostgreSQL**: ${{ steps.current.outputs.pg_version }} → ${{ steps.check-pg.outputs.latest }}\n"
+            echo "PostgreSQL update available: ${{ steps.current.outputs.pg_version }} -> ${{ steps.check-pg.outputs.latest }}"
+          fi
+
+          if [ "${{ steps.current.outputs.pgvector_version }}" != "${{ steps.check-pgvector.outputs.latest }}" ] && [ -n "${{ steps.check-pgvector.outputs.latest }}" ]; then
+            UPDATES="true"
+            CHANGELOG="${CHANGELOG}- **pgvector**: ${{ steps.current.outputs.pgvector_version }} → ${{ steps.check-pgvector.outputs.latest }}\n"
+            echo "pgvector update available: ${{ steps.current.outputs.pgvector_version }} -> ${{ steps.check-pgvector.outputs.latest }}"
+          fi
+
+          if [ "${{ steps.current.outputs.vectorchord_version }}" != "${{ steps.check-vectorchord.outputs.latest }}" ] && [ -n "${{ steps.check-vectorchord.outputs.latest }}" ]; then
+            UPDATES="true"
+            CHANGELOG="${CHANGELOG}- **VectorChord**: ${{ steps.current.outputs.vectorchord_version }} → ${{ steps.check-vectorchord.outputs.latest }}\n"
+            echo "VectorChord update available: ${{ steps.current.outputs.vectorchord_version }} -> ${{ steps.check-vectorchord.outputs.latest }}"
+          fi
+
+          if [ -z "$UPDATES" ]; then
+            echo "All dependencies are up to date"
+            echo "updates_available=false" >> $GITHUB_OUTPUT
+          else
+            echo "updates_available=true" >> $GITHUB_OUTPUT
+            echo "changelog<<EOF" >> $GITHUB_OUTPUT
+            echo -e "$CHANGELOG" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update .versions file
+        if: steps.compare.outputs.updates_available == 'true'
+        run: |
+          source .versions
+
+          # Use latest versions (fall back to current if check failed)
+          NEW_PG="${{ steps.check-pg.outputs.latest }}"
+          NEW_PGVECTOR="${{ steps.check-pgvector.outputs.latest }}"
+          NEW_VECTORCHORD="${{ steps.check-vectorchord.outputs.latest }}"
+          [ -z "$NEW_PG" ] && NEW_PG="${PG_VERSION}"
+          [ -z "$NEW_PGVECTOR" ] && NEW_PGVECTOR="${PGVECTOR_VERSION}"
+          [ -z "$NEW_VECTORCHORD" ] && NEW_VECTORCHORD="${VECTORCHORD_VERSION}"
+
+          # Keep IMAGE_VERSION unchanged - user bumps manually to trigger build
+          cat > .versions << EOF
+          IMAGE_VERSION=${IMAGE_VERSION}
+          PG_VERSION=${NEW_PG}
+          PGVECTOR_VERSION=${NEW_PGVECTOR}
+          VECTORCHORD_VERSION=${NEW_VECTORCHORD}
+          EOF
+
+          echo "Updated .versions:"
+          cat .versions
+
+      - name: Create Pull Request
+        if: steps.compare.outputs.updates_available == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: deps/version-updates
+          title: "chore(deps): update dependency versions"
+          body: |
+            ## Dependency Updates
+
+            ${{ steps.compare.outputs.changelog }}
+
+            ---
+            **To trigger a build:** bump `IMAGE_VERSION` in `.versions` before merging.
+
+            *Auto-generated by version checker workflow*
+          labels: dependencies
+          commit-message: "chore(deps): update dependency versions"

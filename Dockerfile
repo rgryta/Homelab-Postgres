@@ -1,3 +1,4 @@
+# Versions managed in .versions file - these are fallback defaults for local builds
 ARG PG_VERSION=18
 
 # =============================================================================
