@@ -8,7 +8,6 @@ Custom PostgreSQL image with vector extensions for homelab services.
 - **pgvector** - Vector similarity search
 - **VectorChord** - High-performance vector indexing (successor to pgvecto.rs)
 - **Tablespace support** - Pre-configured directories for storage tiering
-- **Multi-arch** - Supports amd64 and arm64
 
 ### Image Tags
 
