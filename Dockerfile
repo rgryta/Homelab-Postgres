@@ -1,14 +1,10 @@
 ARG PG_VERSION=18
 
 # =============================================================================
-# Builder stage: compile pgvector and VectorChord
+# Base builder: common dependencies
 # =============================================================================
-FROM postgres:${PG_VERSION}-alpine AS builder
+FROM postgres:${PG_VERSION}-alpine AS builder-base
 
-ARG PGVECTOR_VERSION=0.8.1
-ARG VECTORCHORD_VERSION=1.0.0
-
-# Install build dependencies
 RUN apk add --no-cache \
     git \
     build-base \
@@ -20,13 +16,25 @@ RUN apk add --no-cache \
     rustfmt \
     openssl-dev
 
-# Build pgvector
+# =============================================================================
+# Stage: Build pgvector (parallel)
+# =============================================================================
+FROM builder-base AS pgvector-builder
+
+ARG PGVECTOR_VERSION=0.8.1
+
 RUN git clone --branch v${PGVECTOR_VERSION} --depth 1 https://github.com/pgvector/pgvector.git /tmp/pgvector \
     && cd /tmp/pgvector \
     && make OPTFLAGS="" \
     && make install
 
-# Build VectorChord using pgrx
+# =============================================================================
+# Stage: Build VectorChord (parallel)
+# =============================================================================
+FROM builder-base AS vchord-builder
+
+ARG VECTORCHORD_VERSION=1.0.0
+
 RUN PG_MAJOR=$(pg_config --version | sed 's/PostgreSQL //' | cut -d. -f1) \
     && cargo install cargo-pgrx --version 0.16.1 --locked \
     && cargo pgrx init --pg${PG_MAJOR} $(which pg_config) \
@@ -43,12 +51,12 @@ ARG PGVECTOR_VERSION=0.8.1
 ARG VECTORCHORD_VERSION=1.0.0
 
 # Copy pgvector extension
-COPY --from=builder /usr/local/lib/postgresql/vector.so /usr/local/lib/postgresql/
-COPY --from=builder /usr/local/share/postgresql/extension/vector* /usr/local/share/postgresql/extension/
+COPY --from=pgvector-builder /usr/local/lib/postgresql/vector.so /usr/local/lib/postgresql/
+COPY --from=pgvector-builder /usr/local/share/postgresql/extension/vector* /usr/local/share/postgresql/extension/
 
 # Copy VectorChord extension
-COPY --from=builder /usr/local/lib/postgresql/vchord.so /usr/local/lib/postgresql/
-COPY --from=builder /usr/local/share/postgresql/extension/vchord* /usr/local/share/postgresql/extension/
+COPY --from=vchord-builder /usr/local/lib/postgresql/vchord.so /usr/local/lib/postgresql/
+COPY --from=vchord-builder /usr/local/share/postgresql/extension/vchord* /usr/local/share/postgresql/extension/
 
 # Create tablespace directories with correct permissions
 RUN mkdir -p /mnt/tablespaces/nvme /mnt/tablespaces/archive \
