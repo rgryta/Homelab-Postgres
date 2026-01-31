@@ -44,8 +44,9 @@ jobs:
       - name: Check latest pgvector version
         id: check-pgvector
         run: |
-          LATEST=$(curl -sL "https://api.github.com/repos/pgvector/pgvector/releases/latest" | \
-            jq -r '.tag_name' | sed 's/^v//')
+          # pgvector uses tags, not releases
+          LATEST=$(curl -sL "https://api.github.com/repos/pgvector/pgvector/tags" | \
+            jq -r '.[0].name' | sed 's/^v//')
           echo "latest=${LATEST}" >> $GITHUB_OUTPUT
           echo "Latest pgvector: ${LATEST}"
 
