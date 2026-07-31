@@ -48,11 +48,19 @@ FROM builder-base AS vchord-builder
 
 ARG VECTORCHORD_VERSION=1.0.0
 
-RUN PG_MAJOR=$(pg_config --version | sed 's/PostgreSQL //' | cut -d. -f1) \
-    && cargo install cargo-pgrx --version 0.16.1 --locked \
-    && cargo pgrx init --pg${PG_MAJOR} $(which pg_config) \
-    && git clone --branch ${VECTORCHORD_VERSION} --depth 1 https://github.com/tensorchord/VectorChord.git /tmp/vchord \
+# cargo-pgrx must EXACTLY match the pgrx version VectorChord depends on
+# ("cargo-pgrx and pgrx library versions must be identical"), so clone first and
+# read the required version out of its Cargo.toml rather than pinning one here --
+# otherwise every VectorChord release that bumps pgrx breaks this build.
+RUN git clone --branch ${VECTORCHORD_VERSION} --depth 1 https://github.com/tensorchord/VectorChord.git /tmp/vchord \
     && cd /tmp/vchord \
+    && PGRX_VERSION="$(grep -m1 -E '^[[:space:]]*pgrx[[:space:]]*=' Cargo.toml \
+         | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)" \
+    && if [ -z "$PGRX_VERSION" ]; then echo "Could not derive pgrx version from Cargo.toml" >&2; exit 1; fi \
+    && echo "VectorChord ${VECTORCHORD_VERSION} requires pgrx ${PGRX_VERSION}" \
+    && PG_MAJOR=$(pg_config --version | sed 's/PostgreSQL //' | cut -d. -f1) \
+    && cargo install cargo-pgrx --version "${PGRX_VERSION}" --locked \
+    && cargo pgrx init --pg${PG_MAJOR} $(which pg_config) \
     && cargo pgrx install --release --pg-config $(which pg_config)
 
 # =============================================================================
