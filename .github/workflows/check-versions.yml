@@ -41,22 +41,48 @@ jobs:
           echo "latest=${LATEST_PG}" >> $GITHUB_OUTPUT
           echo "Latest PostgreSQL: ${LATEST_PG}"
 
+      # Version ceilings: downstream consumers pin supported ranges, so the newest
+      # upstream release is not always safe to adopt. Immich requires
+      # pgvector >=0.7,<0.9 and VectorChord >=0.3,<2.0 -- adopting a release past
+      # those ceilings would break Immich's vector search on this server.
+      # Raise a ceiling only after confirming every consumer supports it.
       - name: Check latest pgvector version
         id: check-pgvector
+        env:
+          MAX_EXCLUSIVE: '0.9'
         run: |
-          # pgvector uses tags, not releases
-          LATEST=$(curl -sL "https://api.github.com/repos/pgvector/pgvector/tags" | \
-            jq -r '.[0].name' | sed 's/^v//')
+          # pgvector uses tags, not releases. Pick the newest tag below the ceiling.
+          LATEST=$(curl -sL "https://api.github.com/repos/pgvector/pgvector/tags?per_page=100" | \
+            jq -r --arg max "$MAX_EXCLUSIVE" '
+              [ .[].name
+                | ltrimstr("v")
+                | select(test("^[0-9]+[.][0-9]+[.][0-9]+$"))
+                | select(. as $v | ($v | split(".") | map(tonumber)) as $p
+                    | ($max | split(".") | map(tonumber)) as $m
+                    | $p[0] < $m[0] or ($p[0] == $m[0] and $p[1] < $m[1]))
+              ]
+              | sort_by(split(".") | map(tonumber)) | last // empty')
           echo "latest=${LATEST}" >> $GITHUB_OUTPUT
-          echo "Latest pgvector: ${LATEST}"
+          echo "Latest pgvector below ${MAX_EXCLUSIVE}: ${LATEST}"
 
       - name: Check latest VectorChord version
         id: check-vectorchord
+        env:
+          MAX_EXCLUSIVE: '2.0'
         run: |
-          LATEST=$(curl -sL "https://api.github.com/repos/tensorchord/VectorChord/releases/latest" | \
-            jq -r '.tag_name' | sed 's/^v//')
+          # Newest non-prerelease below the ceiling.
+          LATEST=$(curl -sL "https://api.github.com/repos/tensorchord/VectorChord/releases?per_page=100" | \
+            jq -r --arg max "$MAX_EXCLUSIVE" '
+              [ .[] | select(.prerelease == false and .draft == false)
+                | .tag_name | ltrimstr("v")
+                | select(test("^[0-9]+[.][0-9]+[.][0-9]+$"))
+                | select(. as $v | ($v | split(".") | map(tonumber)) as $p
+                    | ($max | split(".") | map(tonumber)) as $m
+                    | $p[0] < $m[0] or ($p[0] == $m[0] and $p[1] < $m[1]))
+              ]
+              | sort_by(split(".") | map(tonumber)) | last // empty')
           echo "latest=${LATEST}" >> $GITHUB_OUTPUT
-          echo "Latest VectorChord: ${LATEST}"
+          echo "Latest VectorChord below ${MAX_EXCLUSIVE}: ${LATEST}"
 
       - name: Compare versions
         id: compare

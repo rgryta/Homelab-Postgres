@@ -14,8 +14,9 @@ Custom PostgreSQL image with vector extensions for homelab services.
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest build from main branch |
-| `pg18` | PostgreSQL 18 with default extension versions |
-| `pg18-pgvector0.8.1-vchord1.0.0` | Fully versioned tag |
+| `1.1.0` | Image version |
+| `1.1.0-pg18` | Image version + PostgreSQL major |
+| `sha-<commit>` | Immutable per-commit tag |
 
 ### Docker Compose
 
@@ -120,8 +121,8 @@ ALTER INDEX my_index SET TABLESPACE nvme_ts;
 ```bash
 docker build -t homelab-postgres:local \
   --build-arg PG_VERSION=18 \
-  --build-arg PGVECTOR_VERSION=0.8.1 \
-  --build-arg VECTORCHORD_VERSION=1.0.0 \
+  --build-arg PGVECTOR_VERSION=0.8.6 \
+  --build-arg VECTORCHORD_VERSION=1.1.1 \
   .
 ```
 
@@ -130,8 +131,8 @@ docker build -t homelab-postgres:local \
 | Component | Default |
 |-----------|---------|
 | PostgreSQL | 18 |
-| pgvector | 0.8.1 |
-| VectorChord | 1.0.0 |
+| pgvector | 0.8.6 |
+| VectorChord | 1.1.1 |
 
 ### Credits
 
