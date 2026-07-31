@@ -31,7 +31,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_INITDB_ARGS: "--data-checksums"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # Mount /var/lib/postgresql (NOT .../data). Since PG 18 the upstream image
+      # sets PGDATA=/var/lib/postgresql/18/docker; mounting the old .../data path
+      # leaves PGDATA unmounted and the container refuses to start if it finds
+      # stray data there. See docker-library/postgres#1259.
+      - postgres_data:/var/lib/postgresql
       - nvme_indexes:/mnt/tablespaces/nvme
       - archive_data:/mnt/tablespaces/archive
       - ./init-scripts:/docker-entrypoint-initdb.d:ro
