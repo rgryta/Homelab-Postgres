@@ -6,16 +6,28 @@ ARG PG_VERSION=18
 # =============================================================================
 FROM postgres:${PG_VERSION}-alpine AS builder-base
 
+# The LLVM toolchain must match the one PostgreSQL itself was built against:
+# PGXS hardcodes `clang-<N>` for JIT bitcode generation, so a mismatched clang
+# fails the build with "clang-<N>: No such file or directory" -- even a *newer*
+# one. Derive the major from PGXS rather than pinning it, so an Alpine bump in
+# the base image can't silently break the build again (it did: the previous
+# hardcoded clang19/llvm19 vanished when postgres:18-alpine moved to Alpine 3.24).
 RUN apk add --no-cache \
     git \
     build-base \
-    clang19 \
-    clang-dev \
-    llvm19 \
     cargo \
     rust \
     rustfmt \
-    openssl-dev
+    openssl-dev \
+ && LLVM_MAJOR="$(sed -n 's/^CLANG = .*clang-\([0-9]\+\)$/\1/p' \
+      /usr/local/lib/postgresql/pgxs/src/Makefile.global)" \
+ && if [ -z "$LLVM_MAJOR" ]; then echo "Could not derive LLVM major from PGXS" >&2; exit 1; fi \
+ && echo "Building against LLVM/clang ${LLVM_MAJOR}" \
+ && apk add --no-cache \
+      "clang${LLVM_MAJOR}" \
+      "clang${LLVM_MAJOR}-dev" \
+      "llvm${LLVM_MAJOR}" \
+      "llvm${LLVM_MAJOR}-dev"
 
 # =============================================================================
 # Stage: Build pgvector (parallel)

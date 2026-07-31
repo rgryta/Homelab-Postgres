@@ -5,19 +5,22 @@ on:
     branches: [main]
     paths: ['.versions']
   workflow_dispatch:
+    # Leave inputs blank to build exactly what .versions specifies. Do NOT give
+    # these hardcoded defaults -- a non-empty default silently overrides
+    # .versions and rebuilds stale dependency versions.
     inputs:
       pg_version:
-        description: 'PostgreSQL Version'
+        description: 'PostgreSQL Version (blank = use .versions)'
         required: false
-        default: '18'
+        default: ''
       pgvector_version:
-        description: 'pgvector Version'
+        description: 'pgvector Version (blank = use .versions)'
         required: false
-        default: '0.8.1'
+        default: ''
       vectorchord_version:
-        description: 'VectorChord Version'
+        description: 'VectorChord Version (blank = use .versions)'
         required: false
-        default: '1.0.0'
+        default: ''
 
 env:
   REGISTRY: ghcr.io
